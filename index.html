@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Click Art — Generative Canvas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    cursor: crosshair;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  canvas { display: block; }
+  #hint {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.35);
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+  #hint.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="hint">Click or drag to create art</div>
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
+  let W, H;
+  let circles = [];
+  let trail = [];
+  let mouseX = -100, mouseY = -100;
+  let isMouseDown = false;
+  let frameCount = 0;
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Vibrant color generator using HSL
+  function vibrantColor(alpha) {
+    const hue = Math.random() * 360;
+    const sat = 70 + Math.random() * 30;
+    const light = 55 + Math.random() * 20;
+    return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+  }
+
+  function vibrantHue(baseHue) {
+    const hue = baseHue + (Math.random() - 0.5) * 60;
+    const sat = 75 + Math.random() * 25;
+    const light = 55 + Math.random() * 25;
+    return { h: hue % 360, s: sat, l: light };
+  }
+
+  // Create expanding circle burst
+  function createBurst(x, y) {
+    const baseHue = Math.random() * 360;
+    const count = 5 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < count; i++) {
+      const c = vibrantHue(baseHue);
+      circles.push({
+        x, y,
+        radius: 2 + i * 6,
+        maxRadius: 80 + i * 40 + Math.random() * 60,
+        speed: 0.8 + i * 0.15 + Math.random() * 0.3,
+        hue: c.h,
+        sat: c.s,
+        light: c.l,
+        alpha: 0.9 - i * 0.06,
+        lineWidth: 2.5 - i * 0.15,
+        glow: 10 + i * 4,
+        life: 1.0,
+        decay: 0.004 + Math.random() * 0.003
+      });
+    }
+    // Small sparkling particles
+    for (let i = 0; i < 12; i++) {
+      const angle = (Math.PI * 2 / 12) * i + Math.random() * 0.3;
+      const speed = 1 + Math.random() * 3;
+      circles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        radius: 1.5,
+        maxRadius: 1.5,
+        hue: (baseHue + Math.random() * 80) % 360,
+        sat: 90,
+        light: 70,
+        alpha: 1,
+        isParticle: true,
+        life: 1.0,
+        decay: 0.012 + Math.random() * 0.008
+      });
+    }
+    hint.classList.add('hidden');
+  }
+
+  // Trail point
+  function addTrailPoint(x, y) {
+    trail.push({
+      x, y,
+      alpha: 0.6,
+      radius: 4 + Math.random() * 2,
+      hue: (frameCount * 2) % 360,
+      sat: 80 + Math.random() * 20,
+      light: 60 + Math.random() * 20,
+      life: 1.0
+    });
+    // Keep trail manageable
+    if (trail.length > 80) trail.shift();
+  }
+
+  // Input handlers
+  canvas.addEventListener('mousedown', e => {
+    isMouseDown = true;
+    createBurst(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('mouseup', () => isMouseDown = false);
+  canvas.addEventListener('mousemove', e => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    if (isMouseDown && Math.random() > 0.7) {
+      createBurst(e.clientX + (Math.random()-0.5)*20, e.clientY + (Math.random()-0.5)*20);
+    }
+  });
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    createBurst(t.clientX, t.clientY);
+    mouseX = t.clientX; mouseY = t.clientY;
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouseX = t.clientX; mouseY = t.clientY;
+  }, { passive: false });
+
+  // Animation loop
+  function animate() {
+    frameCount++;
+    requestAnimationFrame(animate);
+
+    // Fade background
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw trail
+    addTrailPoint(mouseX, mouseY);
+    for (let i = trail.length - 1; i >= 0; i--) {
+      const p = trail[i];
+      p.life -= 0.025;
+      if (p.life <= 0) { trail.splice(i, 1); continue; }
+      const a = p.life * 0.5;
+      const r = p.radius * p.life;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = `hsla(${p.hue}, ${p.sat}%, ${p.light}%, ${a})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${p.hue}, ${p.sat}%, ${p.light}%, ${a})`;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw circles
+    for (let i = circles.length - 1; i >= 0; i--) {
+      const c = circles[i];
+      c.life -= c.decay;
+      if (c.life <= 0) { circles.splice(i, 1); continue; }
+
+      if (c.isParticle) {
+        c.x += c.vx;
+        c.y += c.vy;
+        c.vx *= 0.98;
+        c.vy *= 0.98;
+        const a = c.life;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = `hsla(${c.hue}, ${c.sat}%, ${c.light}%, ${a})`;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.radius * c.life, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${c.hue}, ${c.sat}%, ${c.light}%, ${a})`;
+        ctx.fill();
+        ctx.restore();
+      } else {
+        c.radius += c.speed;
+        if (c.radius > c.maxRadius) {
+          c.life -= c.decay * 3;
+        }
+        const a = c.life * c.alpha;
+        const glow = c.glow * c.life;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.shadowBlur = glow;
+        ctx.shadowColor = `hsla(${c.hue}, ${c.sat}%, ${c.light}%, ${a * 0.8})`;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `hsla(${c.hue}, ${c.sat}%, ${c.light}%, ${a})`;
+        ctx.lineWidth = c.lineWidth * c.life;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  animate();
+})();
+</script>
+</body>
+</html>
